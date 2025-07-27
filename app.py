@@ -6,7 +6,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Import routes after app is defined
-from routes.distributor_routes import *
+from routes.manufacturer_routes import *
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))  # fallback to 10000 if not found
