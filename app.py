@@ -48,5 +48,5 @@ def req_order():
                 (d["blanket_name"],d["quantity"],d["distributor"]))
     conn.commit(); return jsonify({"msg":"Requested"}),201
 
-if __name__=="__main__":
-    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
