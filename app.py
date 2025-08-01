@@ -1,7 +1,7 @@
 # manufacturer_service/app.py
 from flask import Flask, request, jsonify
 import mysql.connector, jwt
-from auth_utils import require_token,get_db
+from auth_utils import require_token, get_db, generate_token, verify_token
 
 app = Flask(__name__)
 
