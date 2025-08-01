@@ -7,7 +7,7 @@ from flask import request, jsonify
 import mysql.connector
 from functools import wraps
 
-SECRET_KEY = "cozy_secret"  # Consider moving to environment variable for production
+SECRET_KEY = "cozy_secret"  # ✅ Consider moving this to an environment variable
 
 # ✅ Token generation
 def generate_token(user):
@@ -19,6 +19,7 @@ def generate_token(user):
     }
     return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
+
 # ✅ Token verification
 def verify_token(token):
     try:
@@ -29,30 +30,38 @@ def verify_token(token):
     except jwt.InvalidTokenError:
         return None
 
-# ✅ Decorator to protect routes
-def require_token(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get("Authorization")
-        if token and token.startswith("Bearer "):
-            token = token[7:]
-        else:
-            return jsonify({'error': 'Authorization token required'}), 401
 
-        user = verify_token(token)
-        if not user:
-            return jsonify({'error': 'Invalid or expired token'}), 401
+# ✅ Role-based decorator
+def require_token(role=None):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            token = request.headers.get("Authorization")
+            if token and token.startswith("Bearer "):
+                token = token[7:]
+            else:
+                return jsonify({'error': 'Authorization token required'}), 401
 
-        request.user = user
-        return f(*args, **kwargs)
-    return decorated
+            user = verify_token(token)
+            if not user:
+                return jsonify({'error': 'Invalid or expired token'}), 401
 
-# ✅ Get database connection
+            if role and user['role'] != role:
+                return jsonify({'error': 'Forbidden: Incorrect role'}), 403
+
+            request.user = user
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+
+# ✅ Database connection using Aiven MySQL (with SSL)
 def get_db():
     return mysql.connector.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", 3306)),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "defaultdb")
+        host="cozycomfort-gihansubodha-soc.c.aivencloud.com",
+        port=26728,
+        user="avnadmin",
+        password="AVNS_i33CBpI3jeyig2mnoMR",
+        database="defaultdb",
+        ssl_disabled=False  # 🔐 Required for Aiven
     )
