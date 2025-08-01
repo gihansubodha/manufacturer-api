@@ -3,8 +3,10 @@ from functools import wraps
 from db_config import get_connection
 from auth_utils import generate_token, verify_token
 import jwt
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 AUTH_SECRET = "your_auth_secret"
 
 # TOKEN DECORATOR
