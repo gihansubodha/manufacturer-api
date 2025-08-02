@@ -1,104 +1,108 @@
 from flask import Flask, request, jsonify
-from functools import wraps
-from db_config import get_connection
-from auth_utils import generate_token, verify_token
-import jwt
 from flask_cors import CORS
+import mysql.connector
+from db_config import get_db_connection
 
 app = Flask(__name__)
-CORS(app, origins=["https://gihansubodha.github.io"])
-AUTH_SECRET = "your_auth_secret"
+CORS(app)
 
-# TOKEN DECORATOR
-def require_token(role=None):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            token = None
-            if 'Authorization' in request.headers:
-                try:
-                    token = request.headers['Authorization'].split()[1]
-                except IndexError:
-                    return jsonify({'message': 'Token format invalid'}), 401
-            if not token:
-                return jsonify({'message': 'Token is missing'}), 401
+#  GET All Blanket Models
+@app.route('/blankets', methods=['GET'])
+def get_blankets():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM manufacturer_blankets")
+    blankets = cursor.fetchall()
+    conn.close()
+    return jsonify(blankets)
 
-            try:
-                payload = jwt.decode(token, AUTH_SECRET, algorithms=["HS256"])
-                request.user = payload
-                if role and payload['role'] != role:
-                    return jsonify({'message': 'Access denied for this role'}), 403
-            except jwt.ExpiredSignatureError:
-                return jsonify({'message': 'Token expired'}), 401
-            except jwt.InvalidTokenError:
-                return jsonify({'message': 'Invalid token'}), 401
-
-            return f(*args, **kwargs)
-        return wrapper
-    return decorator
-
-# MANUFACTURER ROUTES
-
-@app.route("/blankets", methods=["GET", "POST", "PUT", "DELETE"])
-@require_token(role="manufacturer")
-def blankets():
-    conn = get_connection()
-    cur = conn.cursor(dictionary=True)
-
-    if request.method == "GET":
-        cur.execute("SELECT * FROM blankets")
-        return jsonify(cur.fetchall())
-
+#  ADD New Blanket Model
+@app.route('/blankets', methods=['POST'])
+def add_blanket():
     data = request.json
-    if request.method == "POST":
-        cur.execute("INSERT INTO blankets (name, material, stock, min_stock) VALUES (%s, %s, %s, %s)",
-                    (data["name"], data["material"], data["stock"], data["min_stock"]))
-        conn.commit()
-        return jsonify({"msg": "Blanket created"}), 201
+    model = data['model']
+    material = data['material']
+    quantity = data['quantity']
+    production_days = data['production_days']
+    min_required = data.get('min_required', 20)
 
-    if request.method == "PUT":
-        cur.execute("UPDATE blankets SET name=%s, material=%s, stock=%s, min_stock=%s WHERE id=%s",
-                    (data["name"], data["material"], data["stock"], data["min_stock"], data["id"]))
-        conn.commit()
-        return jsonify({"msg": "Blanket updated"})
-
-    if request.method == "DELETE":
-        cur.execute("DELETE FROM blankets WHERE id=%s", (data["id"],))
-        conn.commit()
-        return jsonify({"msg": "Blanket deleted"})
-
-    return "", 400
-
-@app.route("/orders", methods=["GET", "PUT"])
-@require_token(role="manufacturer")
-def manufacturer_orders():
-    conn = get_connection()
-    cur = conn.cursor(dictionary=True)
-
-    if request.method == "GET":
-        cur.execute("SELECT * FROM manufacturer_orders")
-        return jsonify(cur.fetchall())
-
-    data = request.json
-    if request.method == "PUT":
-        cur.execute("UPDATE manufacturer_orders SET status=%s WHERE id=%s",
-                    (data["status"], data["id"]))
-        conn.commit()
-        return jsonify({"msg": "Order status updated"})
-
-    return "", 400
-
-@app.route("/order_request", methods=["POST"])
-@require_token(role="distributor")
-def distributor_order_request():
-    data = request.json
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO manufacturer_orders (blanket_name, quantity, distributor) VALUES (%s, %s, %s)",
-                (data["blanket_name"], data["quantity"], data["distributor"]))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO manufacturer_blankets (model, material, quantity, production_days, min_required)
+                      VALUES (%s, %s, %s, %s, %s)""",
+                   (model, material, quantity, production_days, min_required))
     conn.commit()
-    return jsonify({"msg": "Order request submitted"}), 201
+    conn.close()
 
-# MAIN
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    return jsonify({"msg": "Blanket model added"})
+
+#  UPDATE Blanket Stock Quantity (Low Stock Alert)
+@app.route('/blankets/<int:blanket_id>', methods=['PUT'])
+def update_blanket_quantity(blanket_id):
+    data = request.json
+    quantity = data['quantity']
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Update quantity
+    cursor.execute("UPDATE manufacturer_blankets SET quantity=%s WHERE id=%s", (quantity, blanket_id))
+    conn.commit()
+
+    # Check Low Stock
+    cursor.execute("SELECT model, quantity, min_required FROM manufacturer_blankets WHERE id=%s", (blanket_id,))
+    blanket = cursor.fetchone()
+    conn.close()
+
+    if blanket['quantity'] < blanket['min_required']:
+        return jsonify({"msg": "Stock updated", "alert": "Start Production, Low Stock!", "model": blanket['model']})
+
+    return jsonify({"msg": "Stock updated"})
+
+#  DELETE Blanket Model
+@app.route('/blankets/<int:blanket_id>', methods=['DELETE'])
+def delete_blanket(blanket_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM manufacturer_blankets WHERE id=%s", (blanket_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"msg": "Blanket model deleted"})
+
+#  GET Distributor Requests
+@app.route('/distributor-requests', methods=['GET'])
+def get_distributor_requests():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM distributor_requests ORDER BY created_at DESC")
+    requests = cursor.fetchall()
+    conn.close()
+    return jsonify(requests)
+
+#  UPDATE Distributor Request Status
+@app.route('/distributor-requests/<int:request_id>', methods=['PUT'])
+def update_distributor_request_status(request_id):
+    data = request.json
+    status = data['status']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE distributor_requests SET status=%s WHERE id=%s", (status, request_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"msg": "Distributor request status updated"})
+
+#  CHECK All Low Stock Items
+@app.route('/check-low-stock', methods=['GET'])
+def check_low_stock():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT model, quantity, min_required FROM manufacturer_blankets WHERE quantity < min_required")
+    low_stock_items = cursor.fetchall()
+    conn.close()
+    return jsonify({"low_stock": low_stock_items})
+
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
