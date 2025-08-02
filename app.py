@@ -6,7 +6,7 @@ import jwt
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://gihansubodha.github.io"])
 AUTH_SECRET = "your_auth_secret"
 
 # TOKEN DECORATOR
