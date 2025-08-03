@@ -4,7 +4,7 @@ import mysql.connector
 from db_config import get_db_connection
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["*"])
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
 
 #  GET All Blanket Models
 @app.route('/blankets', methods=['GET'])
