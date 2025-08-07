@@ -6,7 +6,7 @@ from db_config import get_db_connection
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
 
-# ✅ GET All Blanket Models
+#  GET All Blanket Models
 @app.route('/blankets', methods=['GET'])
 def get_blankets():
     conn = get_db_connection()
@@ -16,31 +16,41 @@ def get_blankets():
     conn.close()
     return jsonify(blankets)
 
-# ✅ ADD New Blanket Model
+#  ADD New Blanket Model (now supports model_number, price)
 @app.route('/blankets', methods=['POST'])
 def add_blanket():
-    data = request.json
-    model = data['model']
-    material = data['material']
-    quantity = data['quantity']
-    production_days = data['production_days']
+    data = request.json or {}
+    model = data.get('model')
+    model_number = data.get('model_number')  # optional but recommended
+    material = data.get('material')
+    price = data.get('price')                # optional, can be NULL
+    quantity = data.get('quantity', 0)
+    production_days = data.get('production_days', 7)
     min_required = data.get('min_required', 20)
+
+    if not model or not material:
+        return jsonify({"msg": "model and material are required"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""INSERT INTO manufacturer_blankets (model, material, quantity, production_days, min_required)
-                      VALUES (%s, %s, %s, %s, %s)""",
-                   (model, material, quantity, production_days, min_required))
+    cursor.execute("""
+        INSERT INTO manufacturer_blankets
+        (model, model_number, material, price, quantity, production_days, min_required)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, (model, model_number, material, price, quantity, production_days, min_required))
     conn.commit()
     conn.close()
 
     return jsonify({"msg": "Blanket model added"})
 
-# ✅ UPDATE Blanket Stock Quantity (Edit)
+#  UPDATE Blanket Stock Quantity (Edit)
 @app.route('/blankets/<int:blanket_id>', methods=['PUT'])
 def update_blanket_quantity(blanket_id):
-    data = request.json
-    quantity = data['quantity']
+    data = request.json or {}
+    quantity = data.get('quantity')
+
+    if quantity is None:
+        return jsonify({"msg": "quantity is required"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -52,12 +62,12 @@ def update_blanket_quantity(blanket_id):
     blanket = cursor.fetchone()
     conn.close()
 
-    if blanket['quantity'] < blanket['min_required']:
+    if blanket and blanket['quantity'] < blanket['min_required']:
         return jsonify({"msg": "Stock updated", "alert": "Start Production, Low Stock!", "model": blanket['model']})
 
     return jsonify({"msg": "Stock updated"})
 
-# ✅ DELETE Blanket Model
+#  DELETE Blanket Model
 @app.route('/blankets/<int:blanket_id>', methods=['DELETE'])
 def delete_blanket(blanket_id):
     conn = get_db_connection()
@@ -67,7 +77,7 @@ def delete_blanket(blanket_id):
     conn.close()
     return jsonify({"msg": "Blanket model deleted"})
 
-# ✅ GET Distributor Requests
+#  GET Distributor Requests (unchanged logic)
 @app.route('/distributor-requests', methods=['GET'])
 def get_distributor_requests():
     conn = get_db_connection()
@@ -82,16 +92,17 @@ def get_distributor_requests():
     conn.close()
     return jsonify(requests)
 
-# ✅ UPDATE Distributor Request Status + Move to History if Completed/Denied
+#  UPDATE Distributor Request Status + Move to History if Completed/Denied (unchanged logic)
 @app.route('/distributor-requests/<int:request_id>', methods=['PUT'])
 def update_distributor_request_status(request_id):
-    data = request.json
-    status = data['status']
+    data = request.json or {}
+    status = data.get('status')
+    if not status:
+        return jsonify({"msg": "status is required"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Get the request details before updating
     cursor.execute("SELECT * FROM distributor_requests WHERE id=%s", (request_id,))
     request_data = cursor.fetchone()
 
@@ -99,11 +110,9 @@ def update_distributor_request_status(request_id):
         conn.close()
         return jsonify({"msg": "Request not found"}), 404
 
-    # Update status
     cursor.execute("UPDATE distributor_requests SET status=%s WHERE id=%s", (status, request_id))
     conn.commit()
 
-    # Move to history if completed or denied
     if status.lower() in ["completed", "denied"]:
         cursor.execute("""
             INSERT INTO distributor_request_history (distributor_id, blanket_model, quantity, status)
@@ -115,7 +124,7 @@ def update_distributor_request_status(request_id):
     conn.close()
     return jsonify({"msg": "Distributor request status updated"})
 
-# ✅ GET Distributor Request History
+# GET Distributor Request History (unchanged logic)
 @app.route('/distributor-request-history', methods=['GET'])
 def get_distributor_request_history():
     conn = get_db_connection()
@@ -130,17 +139,17 @@ def get_distributor_request_history():
     conn.close()
     return jsonify(history)
 
-# ✅ CHECK All Low Stock Items
+#  CHECK All Low Stock Items
 @app.route('/check-low-stock', methods=['GET'])
 def check_low_stock():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT model, quantity, min_required FROM manufacturer_blankets WHERE quantity < min_required")
+    cursor.execute("SELECT model, model_number, price, quantity, min_required FROM manufacturer_blankets WHERE quantity < min_required")
     low_stock_items = cursor.fetchall()
     conn.close()
     return jsonify({"low_stock": low_stock_items})
 
-# ✅ Health Check
+#  Health Check
 @app.route('/', methods=['GET'])
 def health():
     return jsonify({"status": "Manufacturer Service Running"})
