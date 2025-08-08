@@ -20,24 +20,38 @@ def get_blankets():
 @app.route('/blankets', methods=['POST'])
 def add_blanket():
     data = request.json or {}
-    model = data.get('model')
-    model_number = data.get('model_number')  # optional but recommended
-    material = data.get('material')
-    price = data.get('price')                # optional, can be NULL
-    quantity = data.get('quantity', 0)
-    production_days = data.get('production_days', 7)
-    min_required = data.get('min_required', 20)
 
-    if not model or not material:
-        return jsonify({"msg": "model and material are required"}), 400
+    model = data.get('model')
+    material = data.get('material')
+    quantity = data.get('quantity')
+    production_days = data.get('production_days')
+    min_required = data.get('min_required', 20)
+    model_number = data.get('model_number')  # string or None
+    price = data.get('price')                # number or None
+
+    # Basic validation (keep it light)
+    if not model or material is None or quantity is None or production_days is None:
+        return jsonify({"msg": "model, material, quantity, production_days are required"}), 400
+
+    try:
+        # Coerce numeric types lightly (helps if front-end sends strings)
+        quantity = int(quantity)
+        production_days = int(production_days)
+        min_required = int(min_required) if min_required is not None else 20
+        price = float(price) if price is not None and price != "" else None
+    except ValueError:
+        return jsonify({"msg": "quantity/production_days/min_required/price have invalid types"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute("""
         INSERT INTO manufacturer_blankets
-        (model, model_number, material, price, quantity, production_days, min_required)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (model, model_number, material, price, quantity, production_days, min_required)
+        VALUES
+            (%s, %s, %s, %s, %s, %s, %s)
     """, (model, model_number, material, price, quantity, production_days, min_required))
+
     conn.commit()
     conn.close()
 
